@@ -236,7 +236,7 @@ struct Planner
   // the speed limit in lane 0 (m/s)
   const double SPEED_LIMIT0 = 23.0; // go for it!
   // The speed limit in lane 1 (m/s)
-  const double SPEED_LIMIT1 = 21.0;
+  const double SPEED_LIMIT1 = 21.5;
   // the speed limit in lane 2 (m/s)
   const double SPEED_LIMIT2 = 19.0;
   
@@ -255,12 +255,14 @@ struct Planner
   
   Planner()
   {
-    s_distances = {20, 25, 30, 35, 50 , 55, 60, 70, 90 , 100, 110, 120, 130};
+    s_distances = {20, 25, 30, 35, 50 , 55, 60, 70, 90 , 100, 110, 120/*, 160*/};
     
     current_lane = 1;
     next_lane = 1;
     top_lane_speed = SPEED_LIMIT1;
-    s_end_speeds = {top_lane_speed,
+    s_end_speeds = {top_lane_speed * 1.2,
+		    top_lane_speed * 1.1,
+		    top_lane_speed,
 		    top_lane_speed * 0.9, 
 		    top_lane_speed * 0.8, 
 		    top_lane_speed * 0.6, 
@@ -268,7 +270,8 @@ struct Planner
 		    top_lane_speed * 0.4, 
 		    top_lane_speed * 0.3, 
 		    top_lane_speed * 0.2,
-		    top_lane_speed * 0.1
+		    top_lane_speed * 0.1,
+		    top_lane_speed * 0.07
 		    };
   
     low_speed_counter = 0;
@@ -309,7 +312,7 @@ struct Planner
     
     // update the low-speed counter
     //if (car_speed < 0.75 * top_lane_speed) 
-    if (car_speed < 0.75 * top_lane_speed) 
+    if (car_speed < 0.7 * top_lane_speed) 
     {
       low_speed_counter++;
     }
@@ -343,7 +346,9 @@ struct Planner
       double car_s_forward = car_s + s_distance;
       if (car_s_forward> TRACK_LENGTH) car_s_forward -= TRACK_LENGTH;
       
-      s_end_speeds = {top_lane_speed,
+     s_end_speeds = {top_lane_speed * 1.2,
+		    top_lane_speed * 1.1,
+		    top_lane_speed,
 		    top_lane_speed * 0.9, 
 		    top_lane_speed * 0.8, 
 		    top_lane_speed * 0.6, 
@@ -351,7 +356,8 @@ struct Planner
 		    top_lane_speed * 0.4, 
 		    top_lane_speed * 0.3, 
 		    top_lane_speed * 0.2,
-		    top_lane_speed * 0.1
+		    top_lane_speed * 0.1,
+		    top_lane_speed * 0.07
 		    };
       // now check possible end-speeds in s
       for (int j = 0; j < s_end_speeds.size(); j++)
@@ -372,8 +378,15 @@ struct Planner
 	  if (tracker.speed == 0) continue;
 	      
 	  //cout << "Tracker's d "<<tracker.d<<" and lane : "<< getLane(tracker.d)<<endl;
-	      
+	  
+	  
 	  if ( fabs(tracker.d - car_d) > 3 ) continue;
+	  // check for immediatre collisioon before before anything...
+	  if (fabs( trackDistance(tracker.s + tracker.speed * 5 * Dt, car_s + car_speed * 5 * Dt) ) < 8) // a few meters margin on the s-axis in current position
+	  {
+	    collision = true;
+	  }
+	  if ( getLane(tracker.d) != current_lane) continue;
 	  // now project the s-location of the vehicle for time t = T
 	  double tracker_s_forward = tracker.s + T_forward * tracker.speed;
 	  if (tracker_s_forward > TRACK_LENGTH) tracker_s_forward -= TRACK_LENGTH;
@@ -386,14 +399,13 @@ struct Planner
 	    collision = true;
 	  }
 	      
-	  if (fabs( trackDistance(tracker.s + tracker.speed * 5 * Dt, car_s + car_speed * 5 * Dt) ) < 8) // a few meters margin on the s-axis in current position
-	  {
-	    collision = true;
-	  }
+	 
 	  collision_distance = fabs(trackDistance(tracker.s, car_s));
 	}
-	    
-	double cost =1.5 * abs(acc_s) + 1 / s_distance; // could punish shorter plans for potentially less jerk and acceleration of the spline
+	double cost = 0;    
+	// penalize acceleration in s-axis only when keeping the same lane (i.e. trying to do lane change fast)
+	if (current_lane == next_lane)  cost+= 4.5*abs(acc_s); // could punish shorter plans for potentially less jerk and acceleration of the spline
+	else cost += 0.5 * fabs(acc_s) + T; // penalize the time duration of the manoeuvre
 	if (top_lane_speed > end_speed) cost += fabs(top_lane_speed - end_speed);
 	if (collision == true) cost += COST_COLLISION * collision_distance;
 	if (cost < minCost)
@@ -427,7 +439,7 @@ struct Planner
 	// skip this step if the lane is invalid
 	if (candidate_lane < 0 || candidate_lane > 2 || lane_ofs == 0) continue;
 	// project the car's position in time (roughly...)
-	double T_forward = 50 * Dt;
+	double T_forward = 80 * Dt;
 	double car_s_forward = car_s + car_speed * cos(pi() / 4) * T_forward;
 	double car_d_forward = car_d + lane_ofs * car_speed * sin(pi() / 4) * T_forward;
 	
@@ -439,7 +451,7 @@ struct Planner
 	  // check for collision in d first (so that we can discard the ones thatr are far)
 	  if ( fabs( tracker.d - (candidate_lane + 0.5)* LANE_SIZE  ) > 3 ) continue;
 	  // now requiring that the track-distance of the vehicle from the car is at least than 40 meters
-	  if ( fabs( trackDistance(car_s, tracker.s) ) < 6 ) lane_clear = false; // immediate collision
+	  if ( fabs( trackDistance(car_s, tracker.s) ) < 8 ) lane_clear = false; // immediate collision
 	  //project in time
 	  double tracker_s_forward = tracker.s + T_forward * tracker.speed;
 	  if (tracker_s_forward > TRACK_LENGTH) tracker_s_forward -= TRACK_LENGTH;
