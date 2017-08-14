@@ -1,0 +1,91 @@
+\documentclass[12 pt]{article}
+
+\title{Behavioral Cloning Project}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{fancyvrb}
+\usepackage{listings}
+
+\usepackage{amsmath}
+
+\bibliographystyle{plain}
+
+
+
+\begin{document}
+	\begin{LARGE}
+		 \centering 
+		 {\bf Self-Driving Car: Path Planning}
+		 
+	\end{LARGE}
+	
+	\vspace{1 in}
+	
+	\section{Objectives}
+	
+	
+	
+	The car should be able to successfully cruise in traffic without colliding with other vehicles while performing occasional lane-changing or speed adjustment in its lane. Car motion jerk and acceleration should be confined below a certain bound and speed should not exceed the designated limit (i.e., 50 mph). Furthermore, lane changing should be fast enough to prevent off-lane detection (in which case typically other vehicles lose sight of the car and potentially collide with it). 
+	
+	\section{Method}
+	\label{sect:calibration}
+	
+	The idea behind my solution is to create a general function that plots trajectories from one lane to another in order to provide the planner with a mechanism to implement its ``intentions''. This function can thereafter be used by a higher-level planner, which, based on traffic in close proximity of the car, makes decisions in the behavioral layer on whether the car should keep or change its lane. To do this, the planner generates a number of candidate trajectories (plans) and chooses the one that minimizes a cost function involving criteria such as collision, acceleration and speed. 
+	\subsection{Generating a Curve for Lane-Changing}
+	Consider the car at a world position $\left(x_1,y_1\right)$ with speed $\upsilon_1$, orientation $\theta_1$ and track coordinates $\left(s, d\right)$ and suppose that the target position is the center of a lane at $\left(s_2, d_2\right)$. To define the motion well, we assume that the velocity vector at the end of the maneuver will be parallel to the s-axis. Thus, it is necessary to specify the speed $\upsilon_2$ along the s-axis. Another degree of freedom that remains to define the motion is the distance traveled in the s-axis $\Delta s$.
+	
+	The resulting spline is designed in {\it world coordinates}. Although it is possible to generate a spline in s-d coordinates, it would however produce a discontinuous curve in world coordinates, due to the use of linear segments to interpolate between the waypoints of the track. Thus, instead of generating a dense set of points in s-d coordinates, we instead obtain a sparse set of 3-5 points, which are then transformed into real-world coordinates. These transformed points are then interpolated by a spline parametrized by time.
+	
+	To generate the sparse s-d point-set, we assume that the vehicle is constantly accelerating (or decelerating) in the s-direction. Thus, its s-coordinate through time will be given by:
+	\begin{equation}
+	\label{eq:s_function}
+	s(t)=\frac{1}{2}at^2+\upsilon_1t+s_1
+	\end{equation} 
+	Note that, although $\upsilon_1$ may not entirely be along the s-acis, it is reasonable to assume at this stage that the car is moving only along the s-axis.	
+	
+	Having specified a target speed $\upsilon_2$ and a distance position $s_2$ in s, we may obtain the duration of the motion:
+	\begin{equation}
+	\label{eq:duration}
+		T = \frac{2\left(s_2-s_1\right)}{\upsilon_1+\upsilon_2}
+	\end{equation} 
+	Now, using eq. \eqref{eq:duration} we may compute the acceleration in the s-axis:
+	\begin{equation}
+	a=\frac{2\left(s_2-s_1-u_1T\right)}{T^2}
+	\end{equation}
+	With the above in place, it is now easy to generate the sparse set of s-d points by taking points $s_i\in\left(s_1,s_2\right)$ where $i = 1, 2, \ldots,n$ such that:
+	\begin{equation}
+	s_i=s_1+i\frac{s_2-s_1}{n}
+	\end{equation}
+	We thereafter solve for the respective time instances $t_i$ \footnote{Note that $s\left(0\right)=s_1$. } from eq. \eqref{eq:s_function}. The d-coordinates of the s-d points are chosen uniformly between the starting and ending coordinates in d:
+	\begin{equation}
+	d_i=d_1+i\frac{d_2-d_1}{n}
+	\end{equation}
+	
+	We thereafter transform each pair $\left(s_i,d_i\right)$ into a pair of world coordinates $\left(x_i,y_i\right)$ and generate {\it 2 splines} parametrized by time using the spline tool over the following pairs of points:
+	\begin{eqnarray}
+	x\left(t\right)&=interpolate[(t_0,x_0), (t_1,x_1),\ldots,(t_n,x_n)]\\
+	y\left(t\right)&=interpolate[(t_0,y_0), (t_1,y_1),\ldots,(t_n,y_n)]
+	\end{eqnarray} 
+	
+	Note that in practice, to achieve tangent matching at the boundary, we simply generate extra s-d points in close proximity of the finishing point, while in the beginning, we simply push a few of the points that were not previously executed by the simulator for continuity \footnote{The fact that {\bf the simulator actually returns } the list of points that were not previously reached should be more explicitly stated in the project description.}.  
+	\subsection{Choosing the Optimal Plan}
+	
+	The planner generates multiple splines using combinations of various end-speeds and distances in the s-axis. In particular, the speed values are multiples of the speed limit, 
+	\begin{equation*}
+	\lbrace 0.1\upsilon^{*},0.2\upsilon^{*},\ldots,1.2\upsilon^{*}, \rbrace
+	\end{equation*}
+	, while distances are, 
+	\begin{equation*}
+	\lbrace 10, 15, 20, 25, 30, 40, 50,70,90,110, 120\rbrace
+	\end{equation*}
+	Each combination defines the duration and of the overall motion and the acceleration $a$ in the s-axis. The planner penalizes acceleration severely (by a factor of 5) when the target lane is the same as the current lane to reduce jerk and acceleration alerts. When changing lanes however, acceleration is mildly penalized (by a factor of 0.5), while long durations are also penalized (factor of 1 in the cost function) to encourage faster lane changing with less jerk and acceleration.
+	\subsection{Behaviors}
+	The behavior of the planner is simple. It either keeps its lane or decides to change lane, if one is available. The main criterion that imposes lane change is the speed level. If the speed level stays below 75\% of the speed limit for 140 consecutive simulator feedback cycles, then a lane change is issued. The planner then examines the neighboring lanes and if one is empty, it sets it as the target lane; in any other case, then target lane remains the same and the low-speed counter is reset.     
+%\bibliography{writeup_report.bib}
+
+\end{document}
+
+
+
+
+\grid\grid
